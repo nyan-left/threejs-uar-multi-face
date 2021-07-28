@@ -5,33 +5,14 @@
 
 import * as THREE from 'three';
 import * as ZapparThree from '@zappar/zappar-threejs';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+
 import snapshot from '@zappar/webgl-snapshot';
-import helmet from '../assets/z_helmet.glb';
 import './index.sass';
+import source from './ppl.jpeg';
 
-// The SDK is supported on many different browsers, but there are some that
-// don't provide camera access. This function detects if the browser is supported
-// For more information on support, check out the readme over at
-// https://www.npmjs.com/package/@zappar/zappar-threejs
-if (ZapparThree.browserIncompatible()) {
-  // The browserIncompatibleUI() function shows a full-page dialog that informs the user
-  // they're using an unsupported browser, and provides a button to 'copy' the current page
-  // URL so they can 'paste' it into the address bar of a compatible alternative.
-  ZapparThree.browserIncompatibleUI();
-
-  // If the browser is not compatible, we can avoid setting up the rest of the page
-  // so we throw an exception here.
-  throw new Error('Unsupported browser');
-}
-
-// ZapparThree provides a LoadingManager that shows a progress bar while
-// the assets are downloaded. You can use this if it's helpful, or use
-// your own loading UI - it's up to you :-)
 const manager = new ZapparThree.LoadingManager();
 
-// Construct our ThreeJS renderer (using preserveDrawingBuffer for the snapshot) and scene as usual
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 const scene = new THREE.Scene();
 document.body.appendChild(renderer.domElement);
 
@@ -41,18 +22,16 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Create a Zappar camera that we'll use instead of a ThreeJS camera
-const camera = new ZapparThree.Camera();
-
-// In order to use camera and motion data, we need to ask the users for permission
-// The Zappar library comes with some UI to help with that, so let's use it
-ZapparThree.permissionRequestUI().then((granted) => {
-  // If the user granted us the permissions we need then we can start the camera
-  // Otherwise let's them know that it's necessary with Zappar's permission denied UI
-  if (granted) camera.start(true); // true parameter for user facing camera
-  else ZapparThree.permissionDeniedUI();
+const img = document.createElement('img');
+const camera = new ZapparThree.Camera({
+  rearCameraSource: img,
 });
 
+img.src = source;
+
+img.onload = () => {
+  camera.start();
+};
 // The Zappar component needs to know our WebGL context, so set it like this:
 ZapparThree.glContextSet(renderer.getContext());
 
@@ -64,33 +43,28 @@ scene.background = camera.backgroundTexture;
 // Pass our loading manager to the loader to ensure that the progress bar
 // works correctly
 const faceTracker = new ZapparThree.FaceTrackerLoader(manager).load();
-const faceTrackerGroup = new ZapparThree.FaceAnchorGroup(camera, faceTracker);
+faceTracker.maxFaces = 3;
+const faceTrackerGroup0 = new ZapparThree.FaceAnchorGroup(camera, faceTracker);
+faceTrackerGroup0.anchorId = '0';
+const faceTrackerGroup1 = new ZapparThree.FaceAnchorGroup(camera, faceTracker);
+faceTrackerGroup1.anchorId = '1';
+const faceTrackerGroup2 = new ZapparThree.FaceAnchorGroup(camera, faceTracker);
+faceTrackerGroup2.anchorId = '2';
 // Add our face tracker group into the ThreeJS scene
-scene.add(faceTrackerGroup);
+scene.add(faceTrackerGroup0, faceTrackerGroup1, faceTrackerGroup2);
 
-// Start with the content group invisible
-faceTrackerGroup.visible = false;
+const createCube = (color: string) => {
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const material = new THREE.MeshBasicMaterial({
+    color,
+  });
+  const cube = new THREE.Mesh(geometry, material);
+  return cube;
+};
 
-// We want the user's face to appear in the center of the helmet
-// so use ZapparThree.HeadMaskMesh to mask out the back of the helmet.
-// In addition to constructing here we'll call mask.updateFromFaceAnchorGroup(...)
-// in the frame loop later.
-const mask = new ZapparThree.HeadMaskMeshLoader().load();
-faceTrackerGroup.add(mask);
-
-// Load a 3D model to place within our group (using ThreeJS's GLTF loader)
-// Pass our loading manager in to ensure the progress bar works correctly
-const gltfLoader = new GLTFLoader(manager);
-gltfLoader.load(helmet, (gltf) => {
-  // Position the loaded content to overlay user's face
-  gltf.scene.position.set(0.3, -1.3, 0);
-  gltf.scene.scale.set(1.1, 1.1, 1.1);
-
-  // Add the scene to the tracker group
-  faceTrackerGroup.add(gltf.scene);
-}, undefined, () => {
-  console.log('An error ocurred loading the GLTF model');
-});
+faceTrackerGroup0.add(createCube('red'));
+faceTrackerGroup1.add(createCube('black'));
+faceTrackerGroup2.add(createCube('white'));
 
 // Let's add some lighting, first a directional light above the model pointing down
 const directionalLight = new THREE.DirectionalLight('white', 0.8);
@@ -102,9 +76,9 @@ scene.add(directionalLight);
 const ambientLight = new THREE.AmbientLight('white', 0.4);
 scene.add(ambientLight);
 
-// Hide the 3D content when the face is out of view
-faceTrackerGroup.faceTracker.onVisible.bind(() => { faceTrackerGroup.visible = true; });
-faceTrackerGroup.faceTracker.onNotVisible.bind(() => { faceTrackerGroup.visible = false; });
+faceTracker.onNewAnchor.bind((anchor) => {
+  console.log(anchor);
+});
 
 // Get a reference to the 'Snapshot' button so we can attach a 'click' listener
 const placeButton = document.getElementById('snapshot') || document.createElement('div');
@@ -126,9 +100,6 @@ placeButton.addEventListener('click', () => {
 function render(): void {
   // The Zappar camera must have updateFrame called every frame
   camera.updateFrame(renderer);
-
-  // Update the head mask so it fits the user's head in this frame
-  mask.updateFromFaceAnchorGroup(faceTrackerGroup);
 
   // Draw the ThreeJS scene in the usual way, but using the Zappar camera
   renderer.render(scene, camera);
